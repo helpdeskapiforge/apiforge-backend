@@ -1,6 +1,7 @@
 package com.apiplatform.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty; // <--- 1. Import this
 import jakarta.persistence.*;
 import lombok.Data;
@@ -42,8 +43,9 @@ public class MockRoute {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "mock_server_id")
-    @JsonIgnore
+    @JsonIgnoreProperties({"routes"}) // avoid recursion
     private MockServer mockServer;
+
 }

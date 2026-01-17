@@ -18,7 +18,7 @@ public class MockServerController {
     @Autowired MockServerRepository mockServerRepository;
     @Autowired WorkspaceRepository workspaceRepository;
 
-    // ✅ ADDED: GET Single Server by ID (This was missing)
+    // GET Single Server by ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getServerById(@PathVariable Long id) {
         MockServer server = mockServerRepository.findById(id)
@@ -45,12 +45,30 @@ public class MockServerController {
         MockServer server = new MockServer();
         server.setName(request.name);
         server.setWorkspace(ws);
-        server.setPort(8080);
+        server.setPort(8080); // Default port logic if needed
 
         String prefix = (request.pathPrefix == null || request.pathPrefix.isEmpty())
                 ? UUID.randomUUID().toString().substring(0, 8)
                 : request.pathPrefix;
         server.setPathPrefix(prefix);
+
+        return ResponseEntity.ok(mockServerRepository.save(server));
+    }
+
+    // ✅ ADDED: PUT update existing server
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateServer(@PathVariable Long id, @RequestBody ServerDto request) {
+        MockServer server = mockServerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Mock Server not found with id: " + id));
+
+        // Update fields if provided
+        if (request.name != null && !request.name.isEmpty()) {
+            server.setName(request.name);
+        }
+
+        if (request.pathPrefix != null && !request.pathPrefix.isEmpty()) {
+            server.setPathPrefix(request.pathPrefix);
+        }
 
         return ResponseEntity.ok(mockServerRepository.save(server));
     }
