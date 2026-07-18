@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface CollectionRepository extends JpaRepository<Collection, Long> {
     List<Collection> findByWorkspaceId(Long workspaceId);
+    List<Collection> findByWorkspaceIdOrderBySortOrderAscIdAsc(Long workspaceId);
 }

@@ -1,66 +1,56 @@
 package com.apiplatform.controller;
 
 import com.apiplatform.model.Environment;
-import com.apiplatform.model.Workspace;
-import com.apiplatform.repository.EnvironmentRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.model.User;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.EnvironmentService;
+import com.apiplatform.web.dto.EnvironmentRequest;
+import com.apiplatform.web.dto.response.EnvironmentResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/environments")
+@RequestMapping({"/api/v1/environments", "/api/environments"}) // legacy "/api/environments" kept temporarily; see CHANGELOG.md
 public class EnvironmentController {
 
-    @Autowired EnvironmentRepository environmentRepository;
-    @Autowired WorkspaceRepository workspaceRepository;
+    private final EnvironmentService environmentService;
+    private final CurrentUserProvider currentUserProvider;
 
-    // GET all environments for a workspace
+    public EnvironmentController(EnvironmentService environmentService, CurrentUserProvider currentUserProvider) {
+        this.environmentService = environmentService;
+        this.currentUserProvider = currentUserProvider;
+    }
+
     @GetMapping("/workspace/{workspaceId}")
-    public List<Environment> getByWorkspace(@PathVariable Long workspaceId) {
-        return environmentRepository.findByWorkspaceId(workspaceId);
+    public ResponseEntity<List<EnvironmentResponse>> getByWorkspace(@PathVariable Long workspaceId) {
+        User user = currentUserProvider.getCurrentUser();
+        List<EnvironmentResponse> response = environmentService.getForWorkspace(workspaceId, user).stream()
+                .map(ResponseMapper::toResponse).toList();
+        return ResponseEntity.ok(response);
     }
 
-    // POST create new environment
     @PostMapping("/create")
-    public ResponseEntity<?> create(@RequestBody EnvironmentReq request) {
-        Workspace ws = workspaceRepository.findById(request.workspaceId)
-                .orElseThrow(() -> new RuntimeException("Workspace not found"));
-
-        Environment env = new Environment();
-        env.setName(request.name);
-        env.setVariables(request.variables); // Expecting valid JSON string
-        env.setWorkspace(ws);
-
-        return ResponseEntity.ok(environmentRepository.save(env));
+    public ResponseEntity<EnvironmentResponse> create(@RequestBody EnvironmentRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Environment created = environmentService.create(request, user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(created));
     }
 
-    // PUT update existing environment (The missing piece!)
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody EnvironmentReq request) {
-        Environment env = environmentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Environment not found"));
-
-        // Update fields
-        if (request.name != null) env.setName(request.name);
-        if (request.variables != null) env.setVariables(request.variables);
-
-        return ResponseEntity.ok(environmentRepository.save(env));
+    public ResponseEntity<EnvironmentResponse> update(@PathVariable Long id, @RequestBody EnvironmentRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Environment updated = environmentService.update(id, request, user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
     }
 
-    // DELETE environment
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
-        environmentRepository.deleteById(id);
-        return ResponseEntity.ok("Environment deleted successfully");
-    }
-
-    // Simple DTO
-    public static class EnvironmentReq {
-        public String name;
-        public String variables;
-        public Long workspaceId;
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        environmentService.delete(id, user);
+        return ResponseEntity.noContent().build();
     }
 }

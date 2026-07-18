@@ -1,5 +1,6 @@
 package com.apiplatform.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import java.util.List;
@@ -17,7 +18,12 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    private String password; // Hash this!
+    // Defense in depth: even though no controller currently serializes User directly,
+    // a future change returning this entity should never leak the bcrypt hash.
+    @JsonIgnore
+    @Column(nullable = false)
+    private String password;
+
     private String fullName;
     private String avatarUrl;
 

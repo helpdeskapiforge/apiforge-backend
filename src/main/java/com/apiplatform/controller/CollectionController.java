@@ -1,60 +1,57 @@
 package com.apiplatform.controller;
 
 import com.apiplatform.model.Collection;
-import com.apiplatform.model.Workspace;
+import com.apiplatform.model.User;
 import com.apiplatform.payload.request.CollectionRequest;
-import com.apiplatform.repository.CollectionRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.CollectionService;
+import com.apiplatform.web.dto.response.CollectionResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/collections")
+@RequestMapping({"/api/v1/collections", "/api/collections"}) // legacy "/api/collections" kept temporarily; see CHANGELOG.md
 public class CollectionController {
 
-    @Autowired CollectionRepository collectionRepository;
-    @Autowired WorkspaceRepository workspaceRepository;
+    private final CollectionService collectionService;
+    private final CurrentUserProvider currentUserProvider;
 
-    // GET all collections for a specific workspace
+    public CollectionController(CollectionService collectionService, CurrentUserProvider currentUserProvider) {
+        this.collectionService = collectionService;
+        this.currentUserProvider = currentUserProvider;
+    }
+
     @GetMapping("/workspace/{workspaceId}")
-    public ResponseEntity<List<Collection>> getCollectionsByWorkspace(@PathVariable Long workspaceId) {
-        return ResponseEntity.ok(collectionRepository.findByWorkspaceId(workspaceId));
+    public ResponseEntity<List<CollectionResponse>> getCollectionsByWorkspace(@PathVariable Long workspaceId) {
+        User user = currentUserProvider.getCurrentUser();
+        List<CollectionResponse> response = collectionService.getCollectionsForWorkspace(workspaceId, user).stream()
+                .map(ResponseMapper::toResponse).toList();
+        return ResponseEntity.ok(response);
     }
 
-    // POST create a new collection
     @PostMapping("/create")
-    public ResponseEntity<?> createCollection(@RequestBody CollectionRequest request) {
-        Workspace workspace = workspaceRepository.findById(request.getWorkspaceId())
-                .orElseThrow(() -> new RuntimeException("Error: Workspace not found."));
-
-        Collection collection = new Collection();
-        collection.setName(request.getName());
-        collection.setDescription(request.getDescription());
-        collection.setWorkspace(workspace);
-
-        collectionRepository.save(collection);
-
-        return ResponseEntity.ok("Collection created successfully!");
+    public ResponseEntity<CollectionResponse> createCollection(@Valid @RequestBody CollectionRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Collection created = collectionService.createCollection(request, user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(created));
     }
-
-    // ... inside CollectionController ...
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateCollection(@PathVariable Long id, @RequestBody CollectionRequest request) {
-        Collection col = collectionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Collection not found"));
-
-        col.setName(request.getName());
-        return ResponseEntity.ok(collectionRepository.save(col));
+    public ResponseEntity<CollectionResponse> updateCollection(@PathVariable Long id, @Valid @RequestBody CollectionRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Collection updated = collectionService.updateCollection(id, request, user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteCollection(@PathVariable Long id) {
-        collectionRepository.deleteById(id);
-        return ResponseEntity.ok("Deleted successfully");
+    public ResponseEntity<Void> deleteCollection(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        collectionService.deleteCollection(id, user);
+        return ResponseEntity.noContent().build();
     }
 }

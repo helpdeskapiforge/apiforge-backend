@@ -2,44 +2,45 @@ package com.apiplatform.controller;
 
 import com.apiplatform.model.User;
 import com.apiplatform.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.web.dto.UpdateProfileRequest;
+import com.apiplatform.web.dto.UserProfileResponse;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/user")
+@RequestMapping({"/api/v1/user", "/api/user"}) // legacy "/api/user" kept temporarily; see CHANGELOG.md
 public class UserController {
 
-    @Autowired UserRepository userRepository;
-    @Autowired PasswordEncoder encoder;
+    private final UserRepository userRepository;
+    private final PasswordEncoder encoder;
+    private final CurrentUserProvider currentUserProvider;
 
-    @PutMapping("/profile")
-    public ResponseEntity<?> updateProfile(@RequestBody UpdateProfileRequest request) {
-        // Get currently logged-in user
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Update Full Name
-        if (request.fullName != null && !request.fullName.isEmpty()) {
-            user.setFullName(request.fullName);
-        }
-
-        // Update Password (only if provided)
-        if (request.password != null && !request.password.isEmpty()) {
-            user.setPassword(encoder.encode(request.password));
-        }
-
-        userRepository.save(user);
-        return ResponseEntity.ok("Profile updated successfully");
+    public UserController(UserRepository userRepository, PasswordEncoder encoder, CurrentUserProvider currentUserProvider) {
+        this.userRepository = userRepository;
+        this.encoder = encoder;
+        this.currentUserProvider = currentUserProvider;
     }
 
-    // DTO Helper Class
-    public static class UpdateProfileRequest {
-        public String fullName;
-        public String password;
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileResponse> getProfile() {
+        return ResponseEntity.ok(UserProfileResponse.from(currentUserProvider.getCurrentUser()));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<UserProfileResponse> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+
+        if (request.fullName() != null && !request.fullName().isBlank()) {
+            user.setFullName(request.fullName());
+        }
+        if (request.password() != null && !request.password().isBlank()) {
+            user.setPassword(encoder.encode(request.password()));
+        }
+
+        User saved = userRepository.save(user);
+        return ResponseEntity.ok(UserProfileResponse.from(saved));
     }
 }
