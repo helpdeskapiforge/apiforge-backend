@@ -1,100 +1,62 @@
 package com.apiplatform.controller;
 
 import com.apiplatform.model.MockRoute;
-import com.apiplatform.model.MockServer;
-import com.apiplatform.repository.MockRouteRepository;
-import com.apiplatform.repository.MockServerRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.model.User;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.MockRouteService;
+import com.apiplatform.web.dto.MockRouteRequest;
+import com.apiplatform.web.dto.response.MockRouteResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
+import java.util.List;
+
 @RestController
-@RequestMapping("/api/mocks/routes")
+@RequestMapping({"/api/v1/mocks/routes", "/api/mocks/routes"}) // legacy "/api/mocks/routes" kept temporarily; see CHANGELOG.md
 public class MockRouteController {
 
-    @Autowired MockRouteRepository mockRouteRepository;
-    @Autowired MockServerRepository mockServerRepository;
+    private final MockRouteService mockRouteService;
+    private final CurrentUserProvider currentUserProvider;
+
+    public MockRouteController(MockRouteService mockRouteService, CurrentUserProvider currentUserProvider) {
+        this.mockRouteService = mockRouteService;
+        this.currentUserProvider = currentUserProvider;
+    }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getRouteById(@PathVariable Long id) {
-        MockRoute route = mockRouteRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Route not found"));
-        return ResponseEntity.ok(route);
+    public ResponseEntity<MockRouteResponse> getRouteById(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        return ResponseEntity.ok(ResponseMapper.toResponse(mockRouteService.getOwned(id, user)));
     }
 
     @GetMapping("/server/{serverId}")
-    public ResponseEntity<?> getRoutes(@PathVariable Long serverId) {
-        return ResponseEntity.ok(mockRouteRepository.findByMockServerId(serverId));
+    public ResponseEntity<List<MockRouteResponse>> getRoutes(@PathVariable Long serverId) {
+        User user = currentUserProvider.getCurrentUser();
+        List<MockRouteResponse> response = mockRouteService.getForServer(serverId, user).stream()
+                .map(ResponseMapper::toResponse).toList();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/create")
-    public ResponseEntity<?> createRoute(@RequestBody RouteRequestDto request) {
-        if (request.getMockServerId() == null) {
-            return ResponseEntity.badRequest().body("Error: mockServerId is required");
-        }
-
-        MockServer server = mockServerRepository.findById(request.getMockServerId())
-                .orElseThrow(() -> new RuntimeException("Server not found"));
-
-        MockRoute route = new MockRoute();
-        route.setMockServer(server);
-
-        // Defaults for new route
-        route.setEnabled(true);
-        route.setChaosEnabled(false);
-        route.setFailureRate(0.0);
-
-        mapDtoToRoute(request, route);
-
-        return ResponseEntity.ok(mockRouteRepository.save(route));
+    public ResponseEntity<MockRouteResponse> createRoute(@RequestBody MockRouteRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        MockRoute created = mockRouteService.create(request, user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(created));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateRoute(@PathVariable Long id, @RequestBody RouteRequestDto request) {
-        MockRoute route = mockRouteRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Route not found"));
-
-        mapDtoToRoute(request, route);
-        return ResponseEntity.ok(mockRouteRepository.save(route));
+    public ResponseEntity<MockRouteResponse> updateRoute(@PathVariable Long id, @RequestBody MockRouteRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        MockRoute updated = mockRouteService.update(id, request, user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteRoute(@PathVariable Long id) {
-        mockRouteRepository.deleteById(id);
-        return ResponseEntity.ok("Deleted");
-    }
-
-    // ✅ FIXED MAPPING LOGIC
-    private void mapDtoToRoute(RouteRequestDto dto, MockRoute route) {
-        if (dto.getMethod() != null) route.setMethod(dto.getMethod());
-        if (dto.getPath() != null) route.setPath(dto.getPath());
-        if (dto.getStatusCode() != null) route.setStatusCode(dto.getStatusCode());
-        if (dto.getContentType() != null) route.setContentType(dto.getContentType());
-        if (dto.getResponseBody() != null) route.setResponseBody(dto.getResponseBody());
-        if (dto.getResponseHeaders() != null) route.setResponseHeaders(dto.getResponseHeaders());
-        if (dto.getDelayMs() != null) route.setDelayMs(dto.getDelayMs());
-
-        // ✅ CRITICAL FIX: explicit null checks for Booleans
-        if (dto.getIsEnabled() != null) route.setEnabled(dto.getIsEnabled());
-        if (dto.getChaosEnabled() != null) route.setChaosEnabled(dto.getChaosEnabled());
-        if (dto.getFailureRate() != null) route.setFailureRate(dto.getFailureRate());
-    }
-
-    @lombok.Data
-    static class RouteRequestDto {
-        private Long mockServerId;
-        private String method;
-        private String path;
-        private Integer statusCode; // Changed int -> Integer
-        private String contentType;
-        private String responseBody;
-        private String responseHeaders;
-        private Integer delayMs;    // Changed int -> Integer
-
-        // ✅ Changed boolean -> Boolean (Wrapper) to allow null checks
-        private Boolean isEnabled;
-        private Boolean chaosEnabled;
-        private Double failureRate;    // Changed double -> Double
+    public ResponseEntity<Void> deleteRoute(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        mockRouteService.delete(id, user);
+        return ResponseEntity.noContent().build();
     }
 }

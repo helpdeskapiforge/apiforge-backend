@@ -1,77 +1,48 @@
 package com.apiplatform.controller;
 
-import com.apiplatform.model.User;
-import com.apiplatform.model.Workspace;
 import com.apiplatform.payload.request.LoginRequest;
 import com.apiplatform.payload.request.SignupRequest;
 import com.apiplatform.payload.response.JwtResponse;
-import com.apiplatform.repository.UserRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import com.apiplatform.security.jwt.JwtUtils;
-import com.apiplatform.security.services.UserDetailsImpl;
+import com.apiplatform.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping({"/api/v1/auth", "/api/auth"}) // legacy "/api/auth" kept temporarily; see CHANGELOG.md
 public class AuthController {
-    @Autowired AuthenticationManager authenticationManager;
-    @Autowired UserRepository userRepository;
-    @Autowired WorkspaceRepository workspaceRepository;
-    @Autowired PasswordEncoder encoder;
-    @Autowired JwtUtils jwtUtils;
+
+    private final AuthService authService;
+
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
 
     @PostMapping("/signin")
-    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword()));
-
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = jwtUtils.generateJwtToken(authentication);
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-
-        String fullName = userDetails.getFullName(); // or getName()
-
-        String firstName = fullName;
-        String lastName = "";
-
-        if (fullName != null && fullName.contains(" ")) {
-            int spaceIndex = fullName.indexOf(" ");
-            firstName = fullName.substring(0, spaceIndex);
-            lastName = fullName.substring(spaceIndex + 1);
-        }
-
-
-        return ResponseEntity.ok(new JwtResponse(jwt, userDetails.getId(), userDetails.getUsername(), userDetails.getEmail(), firstName, lastName));
+    public ResponseEntity<JwtResponse> authenticateUser(@Valid @RequestBody LoginRequest loginRequest,
+                                                          HttpServletRequest request) {
+        JwtResponse response = authService.signIn(loginRequest, clientIp(request));
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
-        if (userRepository.existsByEmail(signUpRequest.getEmail())) {
-            return ResponseEntity.badRequest().body("Error: Email is already in use!");
+    public ResponseEntity<Void> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
+        authService.signUp(signUpRequest);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    /**
+     * Best-effort client IP resolution. X-Forwarded-For is only trustworthy when the
+     * app sits behind a reverse proxy/load balancer that sets it itself (and strips any
+     * client-supplied value) — deployment must ensure that.
+     */
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
         }
-
-        User user = new User();
-        user.setFullName(signUpRequest.getFullName());
-        user.setEmail(signUpRequest.getEmail());
-        user.setPassword(encoder.encode(signUpRequest.getPassword()));
-        
-        User savedUser = userRepository.save(user);
-
-        // Create Default Workspace for new User
-        Workspace defaultWorkspace = new Workspace();
-        defaultWorkspace.setName("My Workspace");
-        defaultWorkspace.setOwner(savedUser);
-        workspaceRepository.save(defaultWorkspace);
-
-        return ResponseEntity.ok("User registered successfully!");
+        return request.getRemoteAddr();
     }
 }

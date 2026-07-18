@@ -2,45 +2,57 @@ package com.apiplatform.controller;
 
 import com.apiplatform.model.User;
 import com.apiplatform.model.Workspace;
-import com.apiplatform.repository.UserRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.WorkspaceService;
+import com.apiplatform.web.dto.response.WorkspaceResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/workspaces")
+@RequestMapping({"/api/v1/workspaces", "/api/workspaces"}) // legacy "/api/workspaces" kept temporarily; see CHANGELOG.md
 public class WorkspaceController {
 
-    @Autowired WorkspaceRepository workspaceRepository;
-    @Autowired UserRepository userRepository;
+    private final WorkspaceService workspaceService;
+    private final CurrentUserProvider currentUserProvider;
+
+    public WorkspaceController(WorkspaceService workspaceService, CurrentUserProvider currentUserProvider) {
+        this.workspaceService = workspaceService;
+        this.currentUserProvider = currentUserProvider;
+    }
 
     @GetMapping("/my-workspaces")
-    public List<Workspace> getMyWorkspaces() {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByEmail(email).orElseThrow();
-        return workspaceRepository.findByOwnerId(user.getId());
+    public ResponseEntity<List<WorkspaceResponse>> getMyWorkspaces() {
+        User user = currentUserProvider.getCurrentUser();
+        List<WorkspaceResponse> response = workspaceService.getWorkspacesForUser(user).stream()
+                .map(ResponseMapper::toResponse).toList();
+        return ResponseEntity.ok(response);
     }
 
-    // 👇 ADD THIS METHOD 👇
     @PostMapping("/create")
-    public ResponseEntity<?> createWorkspace(@RequestBody WorkspaceRequest request) {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByEmail(email).orElseThrow();
-
-        Workspace ws = new Workspace();
-        ws.setName(request.name);
-        ws.setOwner(user);
-
-        return ResponseEntity.ok(workspaceRepository.save(ws));
+    public ResponseEntity<WorkspaceResponse> createWorkspace(@RequestBody WorkspaceRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Workspace created = workspaceService.createWorkspace(request.name(), user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(created));
     }
 
-    // DTO
-    public static class WorkspaceRequest {
-        public String name;
+    @PutMapping("/{id}")
+    public ResponseEntity<WorkspaceResponse> renameWorkspace(@PathVariable Long id, @RequestBody WorkspaceRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        Workspace updated = workspaceService.renameWorkspace(id, request.name(), user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteWorkspace(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        workspaceService.deleteWorkspace(id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    public record WorkspaceRequest(String name) {
     }
 }

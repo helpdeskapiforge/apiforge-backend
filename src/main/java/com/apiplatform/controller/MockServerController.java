@@ -1,89 +1,62 @@
 package com.apiplatform.controller;
 
 import com.apiplatform.model.MockServer;
-import com.apiplatform.model.Workspace;
-import com.apiplatform.repository.MockServerRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.model.User;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.MockServerService;
+import com.apiplatform.web.dto.MockServerRequest;
+import com.apiplatform.web.dto.response.MockServerResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.UUID;
+
 import java.util.List;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/mocks/servers")
+@RequestMapping({"/api/v1/mocks/servers", "/api/mocks/servers"}) // legacy "/api/mocks/servers" kept temporarily; see CHANGELOG.md
 public class MockServerController {
 
-    @Autowired MockServerRepository mockServerRepository;
-    @Autowired WorkspaceRepository workspaceRepository;
+    private final MockServerService mockServerService;
+    private final CurrentUserProvider currentUserProvider;
 
-    // GET Single Server by ID
+    public MockServerController(MockServerService mockServerService, CurrentUserProvider currentUserProvider) {
+        this.mockServerService = mockServerService;
+        this.currentUserProvider = currentUserProvider;
+    }
+
     @GetMapping("/{id}")
-    public ResponseEntity<?> getServerById(@PathVariable Long id) {
-        MockServer server = mockServerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Mock Server not found with id: " + id));
-        return ResponseEntity.ok(server);
+    public ResponseEntity<MockServerResponse> getServerById(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        return ResponseEntity.ok(ResponseMapper.toResponse(mockServerService.getOwned(id, user)));
     }
 
-    // GET all mock servers in a workspace
     @GetMapping("/workspace/{workspaceId}")
-    public ResponseEntity<List<MockServer>> getServersByWorkspace(@PathVariable Long workspaceId) {
-        return ResponseEntity.ok(mockServerRepository.findByWorkspaceId(workspaceId));
+    public ResponseEntity<List<MockServerResponse>> getServersByWorkspace(@PathVariable Long workspaceId) {
+        User user = currentUserProvider.getCurrentUser();
+        List<MockServerResponse> response = mockServerService.getForWorkspace(workspaceId, user).stream()
+                .map(ResponseMapper::toResponse).toList();
+        return ResponseEntity.ok(response);
     }
 
-    // POST create new server
     @PostMapping("/create")
-    public ResponseEntity<?> createServer(@RequestBody ServerDto request) {
-        if (request.workspaceId == null) {
-            return ResponseEntity.badRequest().body("Error: workspaceId is required.");
-        }
-
-        Workspace ws = workspaceRepository.findById(request.workspaceId)
-                .orElseThrow(() -> new RuntimeException("Workspace not found"));
-
-        MockServer server = new MockServer();
-        server.setName(request.name);
-        server.setWorkspace(ws);
-        server.setPort(8080); // Default port logic if needed
-
-        String prefix = (request.pathPrefix == null || request.pathPrefix.isEmpty())
-                ? UUID.randomUUID().toString().substring(0, 8)
-                : request.pathPrefix;
-        server.setPathPrefix(prefix);
-
-        return ResponseEntity.ok(mockServerRepository.save(server));
+    public ResponseEntity<MockServerResponse> createServer(@RequestBody MockServerRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        MockServer created = mockServerService.create(request, user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(created));
     }
 
-    // ✅ ADDED: PUT update existing server
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateServer(@PathVariable Long id, @RequestBody ServerDto request) {
-        MockServer server = mockServerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Mock Server not found with id: " + id));
-
-        // Update fields if provided
-        if (request.name != null && !request.name.isEmpty()) {
-            server.setName(request.name);
-        }
-
-        if (request.pathPrefix != null && !request.pathPrefix.isEmpty()) {
-            server.setPathPrefix(request.pathPrefix);
-        }
-
-        return ResponseEntity.ok(mockServerRepository.save(server));
+    public ResponseEntity<MockServerResponse> updateServer(@PathVariable Long id, @RequestBody MockServerRequest request) {
+        User user = currentUserProvider.getCurrentUser();
+        MockServer updated = mockServerService.update(id, request, user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
     }
 
-    // DELETE server
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteServer(@PathVariable Long id) {
-        mockServerRepository.deleteById(id);
-        return ResponseEntity.ok("Deleted");
-    }
-
-    // DTO Class
-    static class ServerDto {
-        public String name;
-        public String pathPrefix;
-        public Long workspaceId;
+    public ResponseEntity<Void> deleteServer(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        mockServerService.delete(id, user);
+        return ResponseEntity.noContent().build();
     }
 }

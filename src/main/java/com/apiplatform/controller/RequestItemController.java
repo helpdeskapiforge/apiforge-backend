@@ -1,85 +1,67 @@
 package com.apiplatform.controller;
 
-import com.apiplatform.model.Collection;
 import com.apiplatform.model.RequestItem;
-import com.apiplatform.model.Workspace;
+import com.apiplatform.model.User;
 import com.apiplatform.payload.request.ApiRequestDto;
-import com.apiplatform.repository.CollectionRepository;
-import com.apiplatform.repository.RequestItemRepository;
-import com.apiplatform.repository.WorkspaceRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.apiplatform.security.access.CurrentUserProvider;
+import com.apiplatform.service.RequestItemService;
+import com.apiplatform.web.dto.PageResponse;
+import com.apiplatform.web.dto.response.RequestItemResponse;
+import com.apiplatform.web.mapper.ResponseMapper;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
-@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/requests")
+@RequestMapping({"/api/v1/requests", "/api/requests"}) // legacy "/api/requests" kept temporarily; see CHANGELOG.md
 public class RequestItemController {
 
-    @Autowired RequestItemRepository requestItemRepository;
-    @Autowired CollectionRepository collectionRepository;
-    @Autowired WorkspaceRepository workspaceRepository;
+    private final RequestItemService requestItemService;
+    private final CurrentUserProvider currentUserProvider;
 
-    // GET all requests inside a specific collection
+    public RequestItemController(RequestItemService requestItemService, CurrentUserProvider currentUserProvider) {
+        this.requestItemService = requestItemService;
+        this.currentUserProvider = currentUserProvider;
+    }
+
     @GetMapping("/collection/{collectionId}")
-    public ResponseEntity<List<RequestItem>> getRequestsByCollection(@PathVariable Long collectionId) {
-        return ResponseEntity.ok(requestItemRepository.findByCollectionId(collectionId));
+    public ResponseEntity<PageResponse<RequestItemResponse>> getRequestsByCollection(
+            @PathVariable Long collectionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        User user = currentUserProvider.getCurrentUser();
+        PageResponse<RequestItem> result = requestItemService.getRequestsForCollection(collectionId, page, size, user);
+        PageResponse<RequestItemResponse> response = new PageResponse<>(
+                result.data().stream().map(ResponseMapper::toResponse).toList(),
+                result.page(), result.size(), result.totalElements(), result.totalPages(), result.hasNext());
+        return ResponseEntity.ok(response);
     }
 
-    // POST (Save) a new Request
-    @PostMapping("/create")
-    public ResponseEntity<?> createRequest(@RequestBody ApiRequestDto apiRequestDto) {
-        Collection collection = collectionRepository.findById(apiRequestDto.getCollectionId())
-                .orElseThrow(() -> new RuntimeException("Error: Collection not found."));
-
-        Workspace workspace = workspaceRepository.findById(apiRequestDto.getWorkspaceId())
-                .orElseThrow(() -> new RuntimeException("Error: Workspace not found."));
-
-        RequestItem requestItem = new RequestItem();
-        requestItem.setName(apiRequestDto.getName());
-        requestItem.setMethod(apiRequestDto.getMethod());
-        requestItem.setUrl(apiRequestDto.getUrl());
-        requestItem.setHeaders(apiRequestDto.getHeaders());
-        requestItem.setBody(apiRequestDto.getBody());
-        requestItem.setAuthConfig(apiRequestDto.getAuthConfig());
-        requestItem.setCollection(collection);
-        requestItem.setWorkspace(workspace);
-
-        RequestItem savedRequest = requestItemRepository.save(requestItem);
-        return ResponseEntity.ok(savedRequest);
-    }
-
-    // PUT (Update) an existing Request
-    @PutMapping("/{id}")
-    public ResponseEntity<?> updateRequest(@PathVariable Long id, @RequestBody ApiRequestDto apiRequestDto) {
-        RequestItem requestItem = requestItemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Error: Request not found."));
-
-        requestItem.setName(apiRequestDto.getName());
-        requestItem.setMethod(apiRequestDto.getMethod());
-        requestItem.setUrl(apiRequestDto.getUrl());
-        requestItem.setHeaders(apiRequestDto.getHeaders());
-        requestItem.setBody(apiRequestDto.getBody());
-        requestItem.setAuthConfig(apiRequestDto.getAuthConfig());
-
-        requestItemRepository.save(requestItem);
-        return ResponseEntity.ok("Request updated successfully!");
-    }
-
-    // GET a single request by ID
     @GetMapping("/{id}")
-    public ResponseEntity<RequestItem> getRequestById(@PathVariable Long id) {
-        RequestItem requestItem = requestItemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Error: Request not found."));
-        return ResponseEntity.ok(requestItem);
+    public ResponseEntity<RequestItemResponse> getRequestById(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        return ResponseEntity.ok(ResponseMapper.toResponse(requestItemService.getOwnedRequest(id, user)));
     }
 
-    // DELETE a request
+    @PostMapping("/create")
+    public ResponseEntity<RequestItemResponse> createRequest(@Valid @RequestBody ApiRequestDto apiRequestDto) {
+        User user = currentUserProvider.getCurrentUser();
+        RequestItem saved = requestItemService.createRequest(apiRequestDto, user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMapper.toResponse(saved));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<RequestItemResponse> updateRequest(@PathVariable Long id, @Valid @RequestBody ApiRequestDto apiRequestDto) {
+        User user = currentUserProvider.getCurrentUser();
+        RequestItem updated = requestItemService.updateRequest(id, apiRequestDto, user);
+        return ResponseEntity.ok(ResponseMapper.toResponse(updated));
+    }
+
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteRequest(@PathVariable Long id) {
-        requestItemRepository.deleteById(id);
-        return ResponseEntity.ok("Request deleted successfully!");
+    public ResponseEntity<Void> deleteRequest(@PathVariable Long id) {
+        User user = currentUserProvider.getCurrentUser();
+        requestItemService.deleteRequest(id, user);
+        return ResponseEntity.noContent().build();
     }
 }
