@@ -59,6 +59,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, "The request conflicts with existing data (e.g. a duplicate value).", request);
     }
 
+    @ExceptionHandler(com.apiplatform.ai.AIProviderException.class)
+    public ResponseEntity<ApiError> handleAIProviderError(com.apiplatform.ai.AIProviderException ex, HttpServletRequest request) {
+        // 502, not 500: the failure is in an upstream AI provider dependency, not our own code --
+        // the frontend uses this to show "configure/check your AI provider" instead of a generic error.
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<ApiError> handleTooManyRequests(TooManyRequestsException ex, HttpServletRequest request) {
         return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), request);

@@ -1,24 +1,5 @@
 services:
   # ---------------------------------------------------------------------------
-  # Reverse Proxy (Entry Point) -- for production deployment behind a real domain
-  # with TLS. Not needed for local development; the `api` service below is also
-  # published directly to the host on :8080 for that.
-  # ---------------------------------------------------------------------------
-  proxy:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    depends_on:
-      - api
-
-  # ---------------------------------------------------------------------------
   # API Forge Backend
   # ---------------------------------------------------------------------------
   api:
@@ -67,7 +48,7 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
       AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-90}
 
   # ---------------------------------------------------------------------------

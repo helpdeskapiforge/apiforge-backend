@@ -44,6 +44,32 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+# AI Providers -- see README.md "AI Providers" for setup of each.
+# Every value has a safe default so the app boots with zero AI config; the relevant
+# provider is simply reported as unavailable (see AIProvider#isAvailable) until configured.
+# Resolution order (first available wins) is controlled by ai.provider-priority.
+ai:
+  provider-priority: ${AI_PROVIDER_PRIORITY:ollama,lmstudio,openrouter,gemini}
+  request-timeout-seconds: ${AI_REQUEST_TIMEOUT_SECONDS:90}
+  max-prompt-chars: ${AI_MAX_PROMPT_CHARS:12000}
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:gemma3}
+  lmstudio:
+    base-url: ${LM_STUDIO_BASE_URL:http://localhost:1234}
+    model: ${LM_STUDIO_MODEL:local-model}
+  openrouter:
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    api-key: ${OPENROUTER_API_KEY:}
+    model: ${OPENROUTER_MODEL:meta-llama/llama-3.1-8b-instruct:free}
+  gemini:
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-2.5-flash}
+  rate-limit:
+    max-requests: ${AI_RATE_LIMIT_MAX:20}
+    window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS:300}
+
 # Actuator (health/info)
 management:
   endpoints:
