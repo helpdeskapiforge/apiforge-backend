@@ -63,4 +63,9 @@ public final class ResponseMapper {
         return new RequestHistoryResponse(h.getId(), h.getMethod(), h.getUrl(), h.getStatus(),
                 h.getDurationMs(), h.getTimestamp());
     }
+
+    public static AIGenerationResponse toResponse(AIGeneration g) {
+        return new AIGenerationResponse(g.getId(), g.getFeature().name(), g.getProvider(), g.getModel(),
+                g.getResult(), g.getTokensUsed(), g.getLatencyMs(), g.getCreatedAt());
+    }
 }

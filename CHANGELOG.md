@@ -5,6 +5,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### AI Tools pass 3 — automatic provider fallback, retired Gemini model fix
+
+- **Root-caused a real "AI provider not connecting" report**: the error surfaced was
+  from Gemini, not Ollama, because `AIProviderResolver` only ever tried the single
+  first "available" provider and hard-failed if its actual call errored (e.g. Ollama
+  reachable but the model wasn't pulled yet) — silently skipping straight to Gemini.
+  `AIProviderResolver.resolveChain()` + `AIGenerationService#callProviderAndPersist`
+  now walk the *entire* configured priority chain, falling back automatically on
+  failure, and only error out (with every attempted provider's message) if all fail.
+  Applied the same fallback to the best-effort AI enrichment in the Postman Test
+  Generator and JSON Validator.
+- **`gemini-2.0-flash` was retired by Google in 2026** — that was the literal cause of
+  the "invalid model id" error reported. Default `GEMINI_MODEL` updated to
+  `gemini-2.5-flash` everywhere (`application.yml`, `docker-compose.yml`, `.env.example`).
+- `OllamaProvider`/`LmStudioProvider` availability checks now log the actual connection
+  failure (`log.warn`) instead of silently swallowing it — `docker compose logs api`
+  now shows *why* a provider was deemed unavailable.
+
+### AI Tools pass 2 — Ollama/Docker fixes, Regex/SQL/Error-Log tools
+
+- **Fixed Ollama connectivity for Docker users**: `docker-compose.yml` now bundles an
+  `ollama` service with `gemma3` auto-pulled on first `docker compose up` (via a
+  one-shot `ollama-pull` init service) and points `OLLAMA_BASE_URL` at it via Docker's
+  internal DNS (`http://ollama:11434`) — not `localhost`, which inside a container
+  refers to the container itself, not the host or a sibling container. This was the
+  most likely cause of "AI provider not available" for anyone running the backend in
+  Docker with Ollama installed on their host. Default `OLLAMA_MODEL` changed from
+  `llama3` to `gemma3` to match. See README.md > AI Providers for the full
+  troubleshooting breakdown (bare run vs. Docker vs. Docker-with-host-Ollama).
+- **`api` service now publishes `:8080` to the host** (was `expose`-only, unreachable
+  from outside the Docker network) so a frontend running via `npm run dev` can reach it.
+- **3 new tools**: Regex Generator, SQL Generator (MySQL/PostgreSQL/SQLite), Error Log
+  Explainer (Java/Spring/Node/Docker/K8s/Postgres/Redis/NGINX).
+- `AI_REQUEST_TIMEOUT_SECONDS` default raised 45s → 90s (CPU-only local inference,
+  especially cold-start, routinely exceeds 45s).
+
+### AI Tools pass — pluggable provider abstraction + 4 developer tools
+
+- **`AIProvider` abstraction** (`com.apiplatform.ai`) with `OllamaProvider`,
+  `LmStudioProvider`, `OpenRouterProvider`, `GeminiProvider` — all free/free-tier,
+  resolved in priority order by `AIProviderResolver` (`AI_PROVIDER_PRIORITY`, defaults
+  to local-first: ollama, lmstudio, openrouter, gemini). Zero config required to boot;
+  AI endpoints return 502 with a clear message when no provider is available.
+- **Four tools** behind `/api/v1/ai/*`: cURL Generator, Postman Test Generator, Mock
+  Data Generator, JSON Validator. Postman assertions and JSON syntax/structure checks
+  are generated **deterministically** (not by the LLM) — the AI only adds what static
+  analysis genuinely can't (business-rule assertions, human explanations, prose→schema).
+- **Prompts** live in dedicated classes under `com.apiplatform.ai.prompt`, never inline
+  in a service. `PromptSanitizer` caps length and fences untrusted input as data.
+- **Persistence**: `ai_generations` table (`V3__ai_generations.sql`) logs every call
+  (feature, provider, model, prompt, result, tokens, latency, success/error) for a
+  history view and audit trail.
+- **`AIRateLimiter`**: per-user request cap (`AI_RATE_LIMIT_MAX` / `_WINDOW_SECONDS`),
+  same in-memory pattern as `LoginRateLimiter`.
+- Tests: `JsonStructureValidatorTest`, `PostmanAssertionBuilderTest`,
+  `MockDataHeuristicGeneratorTest` cover the deterministic (non-LLM) logic directly.
+
 ### Core Features pass — collection folder nesting
 
 - **`collections.parent_id` + `sort_order`** (`V2__collection_folder_nesting.sql`) —
